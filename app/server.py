@@ -8,7 +8,19 @@ def add_task(tasks, title):
     title = title.strip()
     if not title:
         raise ValueError('Task cannot be empty')
-    return tasks + [{'id': len(tasks) + 1, 'title': title}]
+    return tasks + [{'id': len(tasks) + 1, 'title': title, 'completed': False}]
+
+def completed_task_count(tasks):
+    return sum(task.get('completed', False) for task in tasks)
+
+def set_task_completed(tasks, task_id, completed):
+    for task in tasks:
+        if task['id'] == task_id:
+            return [
+                {**item, 'completed': completed} if item['id'] == task_id else item
+                for item in tasks
+            ]
+    raise ValueError('Task not found')
 
 class Handler(BaseHTTPRequestHandler):
     tasks = []
@@ -29,6 +41,20 @@ class Handler(BaseHTTPRequestHandler):
             self.__class__.tasks = add_task(self.tasks, payload.get('title',''))
             self.respond(201, self.tasks[-1])
         except (ValueError, json.JSONDecodeError, AttributeError) as exc:
+            self.respond(400, {'error':str(exc)})
+    def do_PATCH(self):
+        if not self.path.startswith('/api/tasks/'): return self.respond(404, {'error':'not found'})
+        try:
+            task_id = int(self.path.rsplit('/', 1)[-1])
+            size = int(self.headers.get('Content-Length','0'))
+            payload = json.loads(self.rfile.read(size))
+            completed = payload['completed']
+            if not isinstance(completed, bool):
+                raise ValueError('Completed must be a boolean')
+            self.__class__.tasks = set_task_completed(self.tasks, task_id, completed)
+            task = next(item for item in self.tasks if item['id'] == task_id)
+            self.respond(200, task)
+        except (ValueError, KeyError, json.JSONDecodeError, AttributeError) as exc:
             self.respond(400, {'error':str(exc)})
     def respond(self, status, obj):
         body = json.dumps(obj).encode()
