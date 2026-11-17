@@ -1,0 +1,55 @@
+name: CD - simulated environments
+on:
+  push:
+    branches: [develop, main, 'release/**']
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Environment to simulate
+        required: true
+        type: choice
+        options: [dev, qa, uat, prod]
+jobs:
+  select:
+    runs-on: ubuntu-latest
+    outputs:
+      target: ${{ steps.choose.outputs.target }}
+    steps:
+      - id: choose
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED: ${{ inputs.target }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ "$EVENT_NAME" == 'workflow_dispatch' ]]; then target="$REQUESTED";
+          elif [[ "$REF_NAME" == 'develop' ]]; then target=dev;
+          elif [[ "$REF_NAME" == main ]]; then target=uat;
+          elif [[ "$REF_NAME" == release/* ]]; then target=qa;
+          else exit 1; fi
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+  deploy:
+    needs: select
+    runs-on: ubuntu-latest
+    environment: ${{ needs.select.outputs.target }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate before deployment
+        run: python -m unittest discover -s tests -v
+      - name: Simulate deployment and smoke test
+        shell: bash
+        env:
+          TARGET: ${{ needs.select.outputs.target }}
+        run: |
+          mkdir -p "deployments/$TARGET"
+          cp app/index.html app/server.py "deployments/$TARGET/"
+          printf 'environment=%s\ncommit=%s\n' "$TARGET" "$GITHUB_SHA" > "deployments/$TARGET/deployment.txt"
+          python -m compileall -q "deployments/$TARGET"
+          echo "Simulated deployment to $TARGET completed"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deployed-${{ needs.select.outputs.target }}-${{ github.sha }}
+          path: deployments/
