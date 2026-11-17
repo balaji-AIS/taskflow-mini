@@ -31,7 +31,8 @@ jobs:
   deploy:
     needs: select
     runs-on: ubuntu-latest
-    environment: ${{ needs.select.outputs.target }}
+    environment:
+      name: ${{ needs.select.outputs.target }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
